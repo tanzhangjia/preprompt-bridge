@@ -1,0 +1,28 @@
+# PrePrompt Bridge
+# https://github.com/tanzhangjia/preprompt-bridge
+
+version: 0.1.0
+type: plugin
+author: ""
+name: preprompt-bridge
+label:
+  en_US: PrePrompt Bridge
+  zh_Hans: PrePrompt 提示词预处理
+description:
+  en_US: Preprocess prompts for LLM — assemble question, history, role, mode, context into one structured prompt.
+  zh_Hans: 在大模型调用前预处理 prompt — 将问题、历史、角色、模式、上下文自动拼接为结构化提示词。
+icon: icon.svg
+resource:
+  memory: 268435456
+  permission:
+    model:
+      enabled: false
+    storage:
+      enabled: false
+    tool:
+      enabled: false
+    endpoint:
+      enabled: false
+plugins:
+  tools:
+    - provider/preprompt.yaml
