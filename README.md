@@ -2,21 +2,12 @@
 
 工作流中的 Prompt 预处理器。
 
-**纯 Python 3，零外部依赖。插件架构，每个模块可独立扩展。**
+**纯 Python 3，零外部依赖。插件架构，拼接规则和入参完全可自定义。**
 
-## 解决什么场景
+## 场景
 
-在工作流引擎里调 LLM，一个场景常常要配好几个 LLM 节点：
-
-| 场景 | 问题 |
-|------|------|
-| **多语言** | 中文用户一套 prompt，英文用户另一套，模板一样只是语言不同 |
-| **深度思考 vs 快速回复** | deep 模式要多给推理引导，fast 模式要简洁，本质上同一套逻辑 |
-| **角色切换** | 同一接口，有时当客服、有时当翻译、有时当代码审查 |
-| **重复配置** | 每个 LLM 节点都在手拼 `历史：{{history}}\n问题：{{question}}` |
-| **参数传递** | prompt 里塞一大堆变量，改一个模板要改 N 个节点 |
-
-**PrePrompt Bridge 把这一切集中到一个地方：**
+在工作流引擎里调 LLM，一个场景要配好几个 LLM 节点——多语言、深度/快速模式、不同角色，模板类似但参数不同。  
+PrePrompt Bridge 把这一切集中到一个代码节点：按 `lang`、`mode`、`role` 自动拼装，切语言/模式/角色只需改参数，不碰模板。
 
 ```
 原始输入 → PrePrompt Bridge → 整理好的 prompt → LLM 节点（只收一个变量）
@@ -26,7 +17,6 @@
 
 ```bash
 pip install preprompt-bridge
-# 或直接拷贝 preprompt/ 目录
 ```
 
 ```python
@@ -34,120 +24,112 @@ from preprompt import handler
 
 result = handler({
     "question": "帮我写个简介",
-    "his": [{"query": "你是谁", "answer": "我是助手"}],
-    "sys_prompt": "你是专业文案写手",
     "lang": "zh",
     "mode": "normal",
     "role": "writer",
 })
+```
 
-print(result["prompt"])
+## 核心概念：拼接规则
+
+项目不硬编码 prompt 的拼装顺序。每个模块（系统指令、历史、上下文、问题、模式后缀）都是一个 **可插拔的规则**，由 `rules` 参数控制顺序：
+
+```python
+handler({
+    "question": "hi",
+    "rules": ["sys_prompt", "history", "question"],  # 只拼接这三块
+})
+```
+
+默认顺序：`["sys_prompt", "history", "context", "output_format", "question", "mode_suffix", "extra_vars"]`
+
+### 自定义规则
+
+```python
+from preprompt import register_rule
+
+register_rule("weather_context", lambda ctx: (
+    "weather_context", f"当前天气：{ctx._raw.get('weather', '未知')}"
+))
+
+handler({
+    "question": "适合出门吗",
+    "weather": "晴天 25°C",
+    "rules": ["weather_context", "question"],
+})
+```
+
+## 核心概念：自定义变量
+
+除了预置变量外，可以注册任意自定义变量提取器：
+
+```python
+from preprompt import register_variable
+
+register_variable("temperature", lambda params: str(params.get("temperature", "0.7")))
+
+handler({
+    "question": "写首诗",
+    "temperature": "0.9",
+    "template": "创作要求：创造力{{temperature}}\n问题：{{question}}",
+})
 ```
 
 ## API
 
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `question` | str | `""` | 用户当前问题 |
+| `question` | str | `""` | 用户问题 |
 | `quesion` | str | — | 兼容拼写错误 |
 | `his` | list | `[]` | 历史 `[{query, answer}]` |
 | `sys_prompt` | str | `""` | 系统指令 |
 | `lang` | str | `"zh"` | 语言：`zh` / `en` / `ja` |
 | `mode` | str | `""` | 模式：`deep` / `fast` / `creative` / `professional` / `simple` |
 | `role` | str | `""` | 角色：`assistant` / `code_review` / `translator` / `writer` / `teacher` |
-| `context` | dict | `{}` | 额外上下文键值对 |
-| `template` | str | — | 自定义模板 |
+| `context` | dict | `{}` | 额外上下文 |
+| `template` | str | — | 自定义模板（`{{question}}`、`{% if history %}`） |
+| `rules` | list | — | 自定义拼接顺序 |
 | `max_history` | int | `20` | 最大历史轮数 |
-| `trim_history` | bool | `False` | 字符数截断 |
-| `safe_mode` | bool | `False` | 敏感信息过滤 |
 | `style_rules` | str | `""` | 风格指令 |
 | `output_format` | str | `""` | 输出格式要求 |
-| `filter_rules` | list/str | — | 自定义过滤规则 |
-
-返回 `{"prompt": str, "meta": dict}`。
+| `...` | any | — | 任意自定义参数（通过 register_variable 提取） |
 
 ## 插件系统
 
-每个模块都是一个独立注册表，支持运行时扩展。
-
-### 自定义角色
-
-```python
-from preprompt import roles
-
-roles.register("qa_expert", {
-    "zh": "你是一个QA专家",
-    "en": "You are a QA expert",
-})
-
-# 然后直接用
-handler({"question": "测这个", "role": "qa_expert"})
-```
-
-### 自定义模式
-
-```python
-from preprompt import modes
-
-modes.register("concise", {
-    "zh": "\n请用一句话回答",
-    "en": "\nAnswer in one sentence",
-})
-```
-
-### 自定义过滤规则
-
-```python
-from preprompt import filters
-
-filters.register_rule("no_numbers", lambda ctx: "不要输出数字，用文字表示。")
-
-handler({
-    "question": "hi",
-    "filter_rules": "no_numbers",
-})
-```
-
-### 自定义模板
-
-```python
-handler({
-    "question": "hi",
-    "template": "系统：{{sys_prompt}}\n历史：{{history}}\n问题：{{question}}",
-})
-```
-
-模板语法：
-- `{{question}}`、`{{history}}`、`{{sys_prompt}}`、`{{context}}`、`{{mode_suffix}}`、`{{filter_tags}}`
-- `{% if history %}...{% endif %}` 条件块
-
-## 在工作流中使用
-
-复制 `preprompt/` 目录到项目中，或 `pip install` 后：
-
-```python
-# n8n Code 节点
-from preprompt import handler
-return handler({
-    "question": $json.input.q,
-    "lang": $json.input.lang or "zh",
-    "mode": $json.input.mode or "normal",
-})
-```
+| 模块 | 注册函数 | 说明 |
+|------|----------|------|
+| 角色 | `roles.register("name", {"zh": "...", "en": "..."})` | 预置角色 prompt |
+| 模式 | `modes.register("name", {"zh": "...", "en": "..."})` | 模式引导后缀 |
+| 拼接规则 | `register_rule("name", lambda ctx: ("block_name", text))` | 自定义拼装块 |
+| 变量提取 | `register_variable("name", lambda params: value)` | 自定义模板变量 |
+| 模板钩子 | `templates.register_hook(lambda text, blocks: new_text)` | 后期处理 |
 
 ## 架构
 
 ```
 preprompt/
-├── __init__.py   # 导出
-├── handler.py    # 主入口，协调各模块
-├── context.py    # 参数解析与标准化
+├── handler.py    # 主入口（极薄，全委托）
+├── context.py    # 参数解析 + 变量提取器注册
+├── rules.py      # 拼接规则注册与执行
 ├── history.py    # 历史对话组装
-├── roles.py      # 角色系统（插件注册表）
-├── modes.py      # 模式系统（插件注册表）
-├── filters.py    # 过滤规则（插件注册表）
-├── templates.py  # 模板渲染
-└── sanitize.py   # 敏感信息清洗
+├── roles.py      # 角色系统
+├── modes.py      # 模式系统
+└── templates.py  # 模板渲染（默认/自定义）
+```
+
+## 工作流用法
+
+复制 `preprompt/` 目录到项目中即可使用，不依赖任何第三方库。
+
+```python
+# n8n Code 节点 / Dify 代码节点 / 自建服务
+from preprompt import handler
+result = handler({
+    "question": $json.input.question,
+    "lang": $json.input.lang or "zh",
+    "mode": $json.input.mode or "normal",
+})
+# 把 result["prompt"] 传给 LLM
 ```
 
 ## 许可证
