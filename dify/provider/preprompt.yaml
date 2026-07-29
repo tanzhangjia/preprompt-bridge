@@ -1,0 +1,167 @@
+identity:
+  author: ""
+  name: preprompt-bridge
+  label:
+    en_US: PrePrompt Bridge
+    zh_Hans: PrePrompt 提示词预处理
+  description:
+    en_US: Preprocess prompts for LLM — assemble question, history, role, mode, context into one structured prompt.
+    zh_Hans: 在大模型调用前预处理 prompt — 将问题、历史、角色、模式、上下文自动拼接为结构化提示词。
+  icon: icon.svg
+  tags:
+    - utilities
+tools:
+  - name: preprompt
+    label:
+      en_US: Build Prompt
+      zh_Hans: 拼接提示词
+    description:
+      en_US: Build a structured prompt from question, history, role, mode, context, and custom rules. Output ready-to-use prompt string.
+      zh_Hans: 从问题、历史、角色、模式、上下文和自定义规则拼接出结构化提示词。输出可直接传给 LLM 的 prompt 字符串。
+    parameters:
+      - name: question
+        type: string
+        required: true
+        label:
+          en_US: Question
+          zh_Hans: 用户问题
+        placeholder:
+          en_US: What the user is asking
+          zh_Hans: 用户当前提出的问题
+      - name: sys_prompt
+        type: string
+        required: false
+        label:
+          en_US: System Prompt
+          zh_Hans: 系统指令
+        placeholder:
+          en_US: System instructions for the LLM
+          zh_Hans: 给大模型的系统指令/角色设定
+      - name: lang
+        type: select
+        required: false
+        default: zh
+        options:
+          - value: zh
+            label:
+              en_US: Chinese
+              zh_Hans: 中文
+          - value: en
+            label:
+              en_US: English
+              zh_Hans: 英文
+          - value: ja
+            label:
+              en_US: Japanese
+              zh_Hans: 日文
+        label:
+          en_US: Language
+          zh_Hans: 语言
+      - name: mode
+        type: select
+        required: false
+        default: ""
+        options:
+          - value: ""
+            label:
+              en_US: Default
+              zh_Hans: 默认
+          - value: deep
+            label:
+              en_US: Deep Thinking
+              zh_Hans: 深度思考
+          - value: fast
+            label:
+              en_US: Fast Reply
+              zh_Hans: 快速回答
+          - value: creative
+            label:
+              en_US: Creative
+              zh_Hans: 创意模式
+        label:
+          en_US: Mode
+          zh_Hans: 模式
+      - name: role
+        type: select
+        required: false
+        default: ""
+        options:
+          - value: ""
+            label:
+              en_US: (None)
+              zh_Hans: (无)
+          - value: assistant
+            label:
+              en_US: Assistant
+              zh_Hans: 助手
+          - value: code_review
+            label:
+              en_US: Code Review
+              zh_Hans: 代码审查
+          - value: translator
+            label:
+              en_US: Translator
+              zh_Hans: 翻译
+          - value: writer
+            label:
+              en_US: Writer
+              zh_Hans: 写手
+          - value: teacher
+            label:
+              en_US: Teacher
+              zh_Hans: 老师
+        label:
+          en_US: Role
+          zh_Hans: 角色
+      - name: history
+        type: array
+        required: false
+        label:
+          en_US: Conversation History
+          zh_Hans: 历史对话
+        help:
+          en_US: Array of {query, answer} objects. Latest N rounds kept.
+          zh_Hans: 历史对话数组 {query, answer}。保留最近 N 轮。
+      - name: context
+        type: object
+        required: false
+        label:
+          en_US: Additional Context
+          zh_Hans: 额外上下文
+        help:
+          en_US: Key-value pairs appended to the prompt.
+          zh_Hans: 键值对形式添加到 prompt 中。
+      - name: style_rules
+        type: string
+        required: false
+        label:
+          en_US: Style Rules
+          zh_Hans: 风格规则
+        placeholder:
+          en_US: e.g. Speak casually, use emojis
+          zh_Hans: 例如：用口语化表达，多用 emoji
+      - name: max_history
+        type: number
+        required: false
+        default: 20
+        label:
+          en_US: Max History Rounds
+          zh_Hans: 最大历史轮数
+      - name: output_format
+        type: string
+        required: false
+        label:
+          en_US: Output Format
+          zh_Hans: 输出格式
+        placeholder:
+          en_US: e.g. JSON, Markdown table
+          zh_Hans: 例如：JSON、Markdown 表格
+      - name: template
+        type: string
+        required: false
+        label:
+          en_US: Custom Template
+          zh_Hans: 自定义模板
+        help:
+          en_US: Use {{question}}, {{history}}, {{sys_prompt}}, {{context}}, {{mode_suffix}}. Supports {% if %} blocks.
+          zh_Hans: 支持 {{question}}、{{history}}、{{context}}、{{sys_prompt}} 等变量，以及 {% if %} 条件块。
