@@ -1,6 +1,6 @@
 ---
 name: preprompt-bridge
-description: "工作流中的 Prompt 预处理器 — 把问题、历史、角色、模式、上下文拼成结构化 prompt，减少 LLM 节点配置重复。纯 Python 3，零依赖，插件架构。"
+description: "把 prompt 从「每节点一坨」变成「1 个 LLM 节点 + N 个可插拔模块」—— 角色、模式、多语言、拼接规则全部可注册扩展，减少 LLM 节点配置重复。"
 metadata:
   openclaw:
     emoji: 🔗
@@ -10,47 +10,23 @@ metadata:
 
 # 🔗 PrePrompt Bridge — OpenClaw Skill
 
-在工作流引擎（n8n / Dify / OpenClaw / 自建）里调 LLM 时，把杂乱的输入整理成结构化 prompt。
+把 prompt 拆成独立模块（问题、历史、角色、模式、上下文、输出格式…），每个模块是可插拔的规则。  
+1 个 LLM 节点 + 改参数 = 无限场景，不动模板。
 
-**纯 Python 3，零外部依赖。直接用在 AI Agent 中作为 prompt 预处理步骤。**
+**传统做法：** 5 个 LLM 节点要复制 5 遍 prompt 模板，加英文版再翻倍。  
+**这个项目：** 1 个 LLM 节点 + 参数 = 所有场景。
 
 ## 使用方式
-
-作为 Python 库调用：
 
 ```python
 from preprompt import handler
 
-result = handler({
-    "question": "帮我写个简介",
-    "his": [{"query": "你是谁", "answer": "我是 AI 助手"}],
-    "sys_prompt": "你是一个专业文案写手",
-    "lang": "zh",
-    "mode": "deep",
-    "role": "writer",
-})
-
-# 把 result["prompt"] 传给 LLM
+# 同一套模板，不同参数 = 不同场景
+handler({"question": "...", "lang": "zh", "mode": "deep", "role": "writer"})
+handler({"question": "...", "lang": "en", "mode": "fast", "role": "translator"})
 ```
 
-## 参数
-
-| 参数 | 说明 |
-|------|------|
-| `question` | 用户当前问题 |
-| `his` | 历史对话 [{query, answer}] |
-| `sys_prompt` | 系统指令 |
-| `lang` | 语言：`zh` / `en` / `ja` |
-| `mode` | 模式：`deep` / `fast` / `creative` |
-| `role` | 角色：`code_review` / `translator` / `writer` / `teacher` |
-| `context` | 额外上下文键值对 |
-| `template` | 自定义模板 |
-| `rules` | 自定义拼接顺序 |
-| `max_history` | 最大历史轮数 |
-
-返回 `{"prompt": str, "meta": dict}`。
-
-## 插件注册
+## 可插拔的模块
 
 ```python
 from preprompt import roles, modes, register_rule, register_variable
@@ -61,12 +37,19 @@ register_rule("weather", lambda ctx: ("weather", f"天气：{ctx._raw.get('weath
 register_variable("temperature", lambda p: str(p.get("temperature", "0.7")))
 ```
 
-## 作为 Dify 插件
+## 参数
 
-`dify/` 目录包含了完整的 Dify Plugin 定义，可在 Dify 中直接安装使用。
+| 参数 | 说明 |
+|------|------|
+| `question` / `quesion` | 用户问题（兼容拼写） |
+| `his` | 历史对话 [{query, answer}] |
+| `sys_prompt` | 系统指令 |
+| `lang` | 语言 `zh` / `en` / `ja` |
+| `mode` | 模式 `deep` / `fast` / `creative` |
+| `role` | 角色 `code_review` / `translator` / `writer` / `teacher` |
+| `context` | 额外上下文 |
+| `template` | 自定义模板 |
+| `rules` | 自定义拼接顺序 |
+| `max_history` | 最大历史轮数 |
 
-## 链接
-
-- GitHub: https://github.com/tanzhangjia/preprompt-bridge
-- 核心库文档: `preprompt/` 各模块
-- Dify 插件: `dify/manifest.yaml`
+作为 Dify 插件：`dify/` 目录包含完整 Plugin 定义。
