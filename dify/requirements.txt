@@ -1,0 +1,2 @@
+# PrePrompt Bridge — 纯 Python 3，零外部依赖
+# 核心库已内置于 preprompt/ 目录中
