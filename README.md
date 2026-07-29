@@ -28,51 +28,70 @@ result = handler({
     "mode": "normal",
     "role": "writer",
 })
+
+print(result["prompt"])
 ```
 
-## 核心概念：拼接规则
+## 核心概念
 
-项目不硬编码 prompt 的拼装顺序。每个模块（系统指令、历史、上下文、问题、模式后缀）都是一个 **可插拔的规则**，由 `rules` 参数控制顺序：
+### 1. 拼接规则（Rules）
+
+prompt 的拼装顺序由 `rules` 参数控制，**不硬编码**：
 
 ```python
 handler({
     "question": "hi",
-    "rules": ["sys_prompt", "history", "question"],  # 只拼接这三块
+    "rules": ["sys_prompt", "history", "question"],
 })
 ```
 
 默认顺序：`["sys_prompt", "history", "context", "output_format", "question", "mode_suffix", "extra_vars"]`
 
-### 自定义规则
+可以注册自定义拼装块：
 
 ```python
 from preprompt import register_rule
 
-register_rule("weather_context", lambda ctx: (
-    "weather_context", f"当前天气：{ctx._raw.get('weather', '未知')}"
-))
-
+register_rule("weather", lambda ctx: ("weather", f"天气：{ctx._raw.get('weather')}"))
 handler({
-    "question": "适合出门吗",
-    "weather": "晴天 25°C",
-    "rules": ["weather_context", "question"],
+    "question": "适合出门吗", "weather": "晴天 25°C",
+    "rules": ["weather", "question"],
 })
 ```
 
-## 核心概念：自定义变量
+### 2. 自定义变量（Variables）
 
-除了预置变量外，可以注册任意自定义变量提取器：
+注册任意自定义变量提取器，在模板和 prompt 中使用：
 
 ```python
 from preprompt import register_variable
 
-register_variable("temperature", lambda params: str(params.get("temperature", "0.7")))
+register_variable("temperature", lambda p: str(p.get("temperature", "0.7")))
+handler({"question": "写首诗", "temperature": "0.9"})
+```
 
+### 3. 角色 + 模式 + 多语言
+
+```python
 handler({
-    "question": "写首诗",
-    "temperature": "0.9",
-    "template": "创作要求：创造力{{temperature}}\n问题：{{question}}",
+    "question": "review this code",
+    "lang": "en",
+    "mode": "deep",
+    "role": "code_review",
 })
+# → "You are a senior code reviewer..."
+#   "Conversation history:"
+#   "User question: review this code"
+#   "Think step by step..."
+```
+
+角色和模式都是插件式的：
+
+```python
+from preprompt import roles, modes
+
+roles.register("qa_expert", {"zh": "你是QA专家", "en": "You are a QA expert"})
+modes.register("concise", {"zh": "一句话回答", "en": "One sentence answer"})
 ```
 
 ## API
@@ -87,42 +106,58 @@ handler({
 | `mode` | str | `""` | 模式：`deep` / `fast` / `creative` / `professional` / `simple` |
 | `role` | str | `""` | 角色：`assistant` / `code_review` / `translator` / `writer` / `teacher` |
 | `context` | dict | `{}` | 额外上下文 |
-| `template` | str | — | 自定义模板（`{{question}}`、`{% if history %}`） |
+| `template` | str | — | 自定义模板 |
 | `rules` | list | — | 自定义拼接顺序 |
 | `max_history` | int | `20` | 最大历史轮数 |
 | `style_rules` | str | `""` | 风格指令 |
 | `output_format` | str | `""` | 输出格式要求 |
-| `...` | any | — | 任意自定义参数（通过 register_variable 提取） |
+| `...` | any | — | 自定义参数（通过 register_variable 提取） |
 
-## 插件系统
+返回 `{"prompt": str, "meta": dict}`。
 
-| 模块 | 注册函数 | 说明 |
-|------|----------|------|
-| 角色 | `roles.register("name", {"zh": "...", "en": "..."})` | 预置角色 prompt |
-| 模式 | `modes.register("name", {"zh": "...", "en": "..."})` | 模式引导后缀 |
-| 拼接规则 | `register_rule("name", lambda ctx: ("block_name", text))` | 自定义拼装块 |
-| 变量提取 | `register_variable("name", lambda params: value)` | 自定义模板变量 |
-| 模板钩子 | `templates.register_hook(lambda text, blocks: new_text)` | 后期处理 |
+## 作为 Dify 插件使用
+
+本项目提供 **Dify Plugin** 集成，可直接在 Dify Marketplace 搜索 "PrePrompt Bridge" 安装。
+
+或手动安装：
+
+```bash
+git clone https://github.com/tanzhangjia/preprompt-bridge
+cd preprompt-bridge/dify
+dify plugin install .
+```
+
+在工作流中添加 **PrePrompt Bridge** 节点，配好参数后把输出的 `prompt` 传给 LLM 节点即可。
+
+详见 `dify/` 目录。
 
 ## 架构
 
 ```
 preprompt/
-├── handler.py    # 主入口（极薄，全委托）
+├── handler.py    # 主入口（全委托）
 ├── context.py    # 参数解析 + 变量提取器注册
 ├── rules.py      # 拼接规则注册与执行
 ├── history.py    # 历史对话组装
 ├── roles.py      # 角色系统
 ├── modes.py      # 模式系统
-└── templates.py  # 模板渲染（默认/自定义）
+└── templates.py  # 模板渲染
+
+dify/
+├── manifest.yaml          # Dify 插件声明
+├── icon.svg               # 插件图标
+├── provider/
+│   └── preprompt.yaml     # Provider + Tool 定义
+└── tools/
+    └── preprompt.py       # Dify 工具实现（桥接核心库）
 ```
 
-## 工作流用法
+## 在工作流中使用
 
-复制 `preprompt/` 目录到项目中即可使用，不依赖任何第三方库。
+复制 `preprompt/` 目录到项目中即可，不依赖任何第三方库。
 
 ```python
-# n8n Code 节点 / Dify 代码节点 / 自建服务
+# n8n / Dify 代码节点 / 自建服务
 from preprompt import handler
 result = handler({
     "question": $json.input.question,
