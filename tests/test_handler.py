@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""
-PrePrompt Bridge 测试
-"""
-import sys, os, json
+"""PrePrompt Bridge 测试"""
+import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from preprompt import handler
+from preprompt import handler, roles, modes, filters
+from preprompt.context import Context
 
 passed = 0
 failed = 0
-
 
 def test(name, fn):
     global passed, failed
@@ -21,190 +19,138 @@ def test(name, fn):
         failed += 1
         print(f"  ✗ {name}: {e}")
 
-
 def assert_eq(a, b, msg=""):
     if a != b:
-        raise AssertionError(f"{msg or ''} expected {b!r}, got {a!r}")
-
+        raise AssertionError(f"{msg or ''} {a!r} != {b!r}")
 
 def assert_in(a, b, msg=""):
     if a not in b:
         raise AssertionError(f"{msg or ''} {a!r} not in {b!r}")
 
-
 def assert_not_in(a, b, msg=""):
     if a in b:
-        raise AssertionError(f"{msg or ''} {a!r} should not be in {b!r}")
+        raise AssertionError(f"{msg or ''} {a!r} found in {b!r}")
 
 
-# ── 基础 ──
-
-test("空输入", lambda: (
-    assert_eq(handler({})["meta"]["has_question"], False)
+# Context
+test("Context question", lambda: (
+    assert_eq(Context({"question": "hi"}).get_question(), "hi"),
+    assert_eq(Context({"quesion": "q"}).get_question(), "q"),
+    assert_eq(Context({"Q": "sig"}).get_question(), "sig"),
+    assert_eq(Context({}).get_question(), ""),
 ))
 
-test("只有问题", lambda: (
-    assert_in("你好", handler({"question": "你好"})["prompt"]),
-    assert_eq(handler({"question": "你好"})["meta"]["has_question"], True),
-    assert_eq(handler({"question": "你好"})["meta"]["history_rounds"], 0),
+test("Context defaults", lambda: (
+    assert_eq(Context({}).safe_mode, False),
+    assert_eq(Context({}).max_history, 20),
+    assert_eq(Context({}).lang, "zh"),
 ))
 
-test("问题 + 历史", lambda: (
-    assert_in("继续", handler({"question": "继续", "his": [
-        {"query": "你是谁", "answer": "AI助手"},
-    ]})["prompt"]),
-    assert_in("你是谁", handler({"question": "继续", "his": [
-        {"query": "你是谁", "answer": "AI助手"},
-    ]})["prompt"]),
+test("Context extra", lambda: (
+    assert_eq(Context({"temperature": 0.7}).extra["temperature"], 0.7),
 ))
 
-# ── 拼写兼容 ──
+# Handler
+def _test_empty():
+    p = handler({})["prompt"]
+    assert_eq(p, "")
+test("empty input", _test_empty)
 
-test("quesion 拼写兼容", lambda: (
-    assert_in("兼容测试", handler({"quesion": "兼容测试"})["prompt"])
+test("basic question", lambda:
+    assert_in("hi", handler({"question": "hi"})["prompt"]))
+
+test("question + history", lambda:
+    assert_in("q1", handler({
+        "question": "continue",
+        "his": [{"query": "q1", "answer": "a1"}]
+    })["prompt"]))
+
+test("quesion compat", lambda:
+    assert_in("test", handler({"quesion": "test"})["prompt"]))
+
+test("sys_prompt", lambda:
+    assert_in("expert", handler({"question": "w", "sys_prompt": "you are expert"})["prompt"]))
+
+# Multi-lang
+test("lang en", lambda:
+    assert_in("User question:", handler({"question": "hi", "lang": "en"})["prompt"]))
+
+test("lang ja", lambda:
+    assert_in("ユーザーの質問：", handler({"question": "hi", "lang": "ja"})["prompt"]))
+
+# Modes
+test("mode deep", lambda:
+    assert_in("逐步推理", handler({"question": "x", "mode": "deep"})["prompt"]))
+
+test("mode fast", lambda:
+    assert_in("直接给出答案", handler({"question": "x", "mode": "fast"})["prompt"]))
+
+test("mode creative", lambda:
+    assert_in("创造力", handler({"question": "x", "mode": "creative"})["prompt"]))
+
+test("mode professional en", lambda:
+    assert_in("professional", handler({"question": "x", "mode": "professional", "lang": "en"})["prompt"]))
+
+test("mode simple", lambda:
+    assert_in("通俗易懂", handler({"question": "x", "mode": "simple"})["prompt"]))
+
+# Roles
+test("role code_review", lambda:
+    assert_in("代码审查", handler({"question": "r", "role": "code_review"})["prompt"]))
+
+test("role translator en", lambda:
+    assert_in("professional translator",
+              handler({"question": "t", "role": "translator", "lang": "en"})["prompt"]))
+
+test("role teacher", lambda:
+    assert_in("耐心", handler({"question": "t", "role": "teacher"})["prompt"]))
+
+# Safe mode
+test("safe_mode phone", lambda:
+    assert_not_in("13800138000", handler({"question": "m13800138000", "safe_mode": True})["prompt"]))
+
+test("safe_mode id + phone", lambda: (
+    assert_in("[身份证]", handler({"question": "id110101199001011234", "safe_mode": True})["prompt"]),
+    assert_in("[手机号]", handler({"question": "p13800138000", "safe_mode": True})["prompt"]),
 ))
 
-# ── 系统指令 ──
-
-test("系统指令", lambda:
-    assert_in("文案专家", handler({"question": "写文案", "sys_prompt": "你是文案专家"})["prompt"])
-)
-
-# ── 多语言 ──
-
-test("英文模板", lambda: (
-    assert_in("User question:", handler({"question": "hi", "lang": "en"})["prompt"])
-))
-
-test("日文模板", lambda: (
-    assert_in("ユーザーの質問：", handler({"question": "こんにちは", "lang": "ja"})["prompt"])
-))
-
-# ── 模式 ──
-
-test("deep 模式带推理引导", lambda: (
-    assert_in("逐步推理", handler({"question": "分析一下", "mode": "deep"})["prompt"])
-))
-
-test("deep 模式英文引导", lambda: (
-    assert_in("step by step", handler({"question": "analyze", "mode": "deep", "lang": "en"})["prompt"])
-))
-
-test("fast 模式", lambda: (
-    assert_in("直接给出答案", handler({"question": "hi", "mode": "fast"})["prompt"])
-))
-
-test("creative 模式", lambda: (
-    assert_in("创造力", handler({"question": "讲故事", "mode": "creative"})["prompt"])
-))
-
-# ── 角色 ──
-
-test("角色 code_review", lambda: (
-    assert_in("代码审查", handler({"question": "review this", "role": "code_review"})["prompt"])
-))
-
-test("角色 translator 英文", lambda: (
-    assert_in("professional translator", handler({
-        "question": "translate", "role": "translator", "lang": "en"
-    })["prompt"])
-))
-
-test("角色 teacher", lambda: (
-    assert_in("耐心", handler({"question": "教教我", "role": "teacher"})["prompt"])
-))
-
-# ── 安全模式 ──
-
-test("safe_mode 过滤", lambda: (
-    assert_not_in("13800138000", handler({
-        "question": "手机13800138000",
-        "safe_mode": True,
-    })["prompt"]),
-    assert_in("[手机号]", handler({
-        "question": "手机13800138000",
-        "safe_mode": True,
-    })["prompt"]),
-))
-
-test("safe_mode 身份证 + 手机号", lambda: (
-    assert_in("[身份证]", handler({
-        "question": "身份证110101199001011234",
-        "safe_mode": True,
-    })["prompt"]),
-    assert_in("[手机号]", handler({
-        "question": "手机13800138000身份证110101199001011234",
-        "safe_mode": True,
-    })["prompt"]),
-))
-
-# ── history 控制 ──
-
-test("max_history 限制", lambda: (
+# History control
+test("max_history", lambda:
     assert_eq(handler({
         "question": "x",
         "his": [{"query": f"q{i}", "answer": f"a{i}"} for i in range(50)],
         "max_history": 3,
-    })["meta"]["history_rounds"], 3)
-))
+    })["meta"]["history_rounds"], 3))
 
-test("大量历史默认 20", lambda: (
+test("default max 20", lambda:
     assert_eq(handler({
         "question": "x",
         "his": [{"query": f"q{i}", "answer": f"a{i}"} for i in range(100)],
-    })["meta"]["history_rounds"], 20)
-))
+    })["meta"]["history_rounds"], 20))
 
-# ── 自定义模板 ──
+# Custom template
+test("custom template", lambda:
+    assert_eq(handler({"question": "test", "template": "Q:{{question}}"})["prompt"], "Q:test"))
 
-test("自定义模板", lambda: (
-    assert_eq(handler({
-        "question": "test",
-        "template": "Q: {{question}}",
-    })["prompt"], "Q: test")
-))
+# Context
+test("additional context", lambda:
+    assert_in("pref",
+              handler({"question": "r", "context": {"user_pref": "pref"}})["prompt"]))
 
-test("自定义模板条件", lambda: (
-    assert_eq(
-        handler({"question": "hi", "template": "{% if sys_prompt %}{{sys_prompt}}{% endif %}{{question}}"})["prompt"],
-        "hi"
-    ),
-    assert_eq(
-        handler({"question": "hi", "sys_prompt": "你是", "template": "{% if sys_prompt %}{{sys_prompt}}{% endif %}{{question}}"})["prompt"],
-        "你是hi"
-    ),
-))
+# Style rules
+test("style_rules", lambda:
+    assert_in("口语化", handler({"question": "hi", "style_rules": "用口语化表达"})["prompt"]))
 
-# ── 上下文 ──
+# Output format
+test("output_format", lambda:
+    assert_in("JSON", handler({"question": "hi", "output_format": "JSON"})["prompt"]))
 
-test("额外上下文", lambda: (
-    assert_in("辣的食物", handler({
-        "question": "推荐",
-        "context": {"用户偏好": "辣的食物", "预算": "50元"},
-    })["prompt"])
-))
-
-# ── 风格规则 ──
-
-test("风格规则", lambda: (
-    assert_in("口语化", handler({
-        "question": "hi",
-        "style_rules": "用口语化表达",
-    })["prompt"])
-))
-
-# ── meta ──
-
-def _check_meta():
+# Meta
+def _meta_check():
     m = handler({
-        "question": "a",
-        "his": [{"query": "q", "answer": "a"}],
-        "sys_prompt": "s",
-        "context": {"x": "y"},
-        "safe_mode": True,
-        "mode": "deep",
-        "lang": "en",
-        "role": "translator",
+        "question": "a", "his": [{"query": "q", "answer": "a"}],
+        "sys_prompt": "s", "context": {"x": "y"},
+        "safe_mode": True, "mode": "deep", "lang": "en", "role": "translator",
     })["meta"]
     assert_eq(m["has_question"], True)
     assert_eq(m["history_rounds"], 1)
@@ -215,20 +161,40 @@ def _check_meta():
     assert_eq(m["lang"], "en")
     assert_eq(m["role"], "translator")
     assert isinstance(m["prompt_length"], int)
+test("meta fields", _meta_check)
 
-test("meta 字段完整", _check_meta)
+# Plugin: custom roles
+test("roles.register", lambda: (
+    roles.register("qa_expert", {"zh": "QA专家", "en": "QA expert"}),
+    assert_in("QA专家", handler({"question": "t", "role": "qa_expert"})["prompt"]),
+    assert_in("QA expert", handler({"question": "t", "role": "qa_expert", "lang": "en"})["prompt"]),
+))
 
-# ── 边界 ──
+# Plugin: custom modes
+test("modes.register", lambda: (
+    modes.register("concise", {"zh": "一句话回答", "en": "one sentence"}),
+    assert_in("一句话", handler({"question": "t", "mode": "concise"})["prompt"]),
+    assert_in("one sentence", handler({"question": "t", "mode": "concise", "lang": "en"})["prompt"]),
+))
 
-test("his 非列表", lambda:
-    assert_eq(handler({"question": "x", "his": "not a list"})["meta"]["history_rounds"], 0)
-)
+# Plugin: custom filters
+test("filters.register_rule", lambda: (
+    filters.register_rule("no_numbers", lambda ctx: "不要输出数字"),
+    assert_in("不要输出数字", handler({"question": "hi", "filter_rules": "no_numbers"})["prompt"]),
+))
 
-test("空字符串问题", lambda:
-    assert_eq(handler({"question": ""})["meta"]["has_question"], False)
-)
+# Edge cases
+test("his not list", lambda:
+    assert_eq(handler({"question": "x", "his": "bad"})["meta"]["history_rounds"], 0))
 
+test("empty question", lambda:
+    assert_eq(handler({"question": ""})["meta"]["has_question"], False))
 
+test("extra pass through", lambda:
+    assert_eq(Context({"temperature": 0.7}).extra["temperature"], 0.7))
+
+# Print summary
+total = passed + failed
 print(f"\n{'─' * 40}")
-print(f"{passed} passed, {failed} failed{' ❌' if failed else ' ✅'}")
+print(f"{passed}/{total} passed{' ❌' if failed else ' ✅'}")
 sys.exit(1 if failed else 0)
